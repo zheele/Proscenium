@@ -49,6 +49,11 @@ import re
 import sys
 from pathlib import Path
 
+try:
+    import tomllib
+except ImportError:
+    tomllib = None
+
 from PIL import Image, ImageOps, ImageEnhance
 from reportlab.lib.units import mm
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
@@ -82,6 +87,63 @@ PAGE_MARGIN = 8.0    # minimum margin used only to decide how many cards
                       # fit per page; the grid is then centered on the page
 
 IMAGE_EXTS = {'.png', '.jpg', '.jpeg', '.webp', '.bmp', '.tif', '.tiff'}
+
+# ---------------------------------------------------------------------------
+# Settings file
+#
+# Lets you set defaults for --fit/--brighten/--header-align/--body-align/
+# --cut-lines once instead of retyping them every run:
+#   ~/.gm_cards.toml           - global defaults
+#   <cards_dir>/.gm_cards.toml - per-folder overrides (take precedence)
+# A CLI flag, when given explicitly, always wins over both.
+# ---------------------------------------------------------------------------
+
+CONFIG_DEFAULTS = {
+    'fit': 'cover',
+    'cut_lines': True,
+    'brighten': 1.0,
+    'header_align': 'center',
+    'body_align': 'center',
+}
+
+CONFIG_CHOICES = {
+    'fit': {'cover', 'contain'},
+    'header_align': {'center', 'left'},
+    'body_align': {'center', 'left'},
+}
+
+GLOBAL_CONFIG_PATH = Path.home() / '.gm_cards.toml'
+
+
+def _read_config_file(path):
+    if not path.is_file():
+        return {}
+    if tomllib is None:
+        print(f"Warning: found {path} but this Python has no tomllib "
+              f"(needs Python 3.11+) - ignoring it", file=sys.stderr)
+        return {}
+    with open(path, 'rb') as f:
+        data = tomllib.load(f)
+    unknown = set(data) - set(CONFIG_DEFAULTS)
+    if unknown:
+        print(f"Warning: ignoring unknown setting(s) in {path}: "
+              f"{', '.join(sorted(unknown))}", file=sys.stderr)
+        data = {k: v for k, v in data.items() if k in CONFIG_DEFAULTS}
+    for key, choices in CONFIG_CHOICES.items():
+        if key in data and data[key] not in choices:
+            print(f"Warning: ignoring invalid '{key}' = {data[key]!r} in {path} "
+                  f"(must be one of {sorted(choices)})", file=sys.stderr)
+            del data[key]
+    return data
+
+
+def load_settings(cards_dir):
+    """Merge built-in defaults, global config, and per-folder config (in that
+    order, each overriding the last)."""
+    settings = dict(CONFIG_DEFAULTS)
+    settings.update(_read_config_file(GLOBAL_CONFIG_PATH))
+    settings.update(_read_config_file(Path(cards_dir) / '.gm_cards.toml'))
+    return settings
 
 # ---------------------------------------------------------------------------
 # Grid layout
@@ -410,19 +472,26 @@ def main():
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('cards_dir', help='Folder containing image + .md pairs')
     ap.add_argument('-o', '--output', default='cards.pdf', help='Output PDF path')
-    ap.add_argument('--fit', choices=['cover', 'contain'], default='cover',
+    ap.add_argument('--fit', choices=['cover', 'contain'], default=None,
                      help='How to fit images into the front window '
                           '(default: cover = crop to fill; contain = letterbox)')
-    ap.add_argument('--no-cut-lines', action='store_true', help='Do not draw cut guide lines')
-    ap.add_argument('--brighten', type=float, default=1.0,
+    ap.add_argument('--cut-lines', action=argparse.BooleanOptionalAction, default=None,
+                     help='Draw cut guide lines (default: on)')
+    ap.add_argument('--brighten', type=float, default=None,
                      help='Brighten front-card images before placing them in the PDF, '
                           'to compensate for a printer that prints dark. '
                           '1.0 = unchanged, 1.2 = 20%% brighter, etc. (default: 1.0)')
-    ap.add_argument('--header-align', choices=['center', 'left'], default='center')
-    ap.add_argument('--body-align', choices=['center', 'left'], default='center')
+    ap.add_argument('--header-align', choices=['center', 'left'], default=None)
+    ap.add_argument('--body-align', choices=['center', 'left'], default=None)
     ap.add_argument('--debug', action='store_true',
                      help='Draw window outlines and filenames for alignment checking')
     args = ap.parse_args()
+
+    settings = load_settings(args.cards_dir)
+    for key in CONFIG_DEFAULTS:
+        cli_value = getattr(args, key)
+        if cli_value is not None:
+            settings[key] = cli_value
 
     entries = collect_entries(args.cards_dir)
     if not entries:
@@ -437,9 +506,9 @@ def main():
         print(f"Note: no .md for: {', '.join(missing_md)} (back left blank)")
 
     (fcols, frows, fpp), (bcols, brows, bpp) = build_pdf(
-        entries, args.output, fit=args.fit, cut_lines=not args.no_cut_lines,
-        header_align_name=args.header_align, body_align_name=args.body_align,
-        debug=args.debug, brighten=args.brighten)
+        entries, args.output, fit=settings['fit'], cut_lines=settings['cut_lines'],
+        header_align_name=settings['header_align'], body_align_name=settings['body_align'],
+        debug=args.debug, brighten=settings['brighten'])
 
     f_pages = -(-len(entries) // fpp)  # ceil
     b_pages = -(-len(entries) // bpp)

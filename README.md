@@ -96,6 +96,27 @@ back stat-block pages. `1.0` is unchanged, `1.2` is 20% brighter, and so
 on; there's no single right value, since it depends on your printer, so
 print a test page and adjust from there.
 
+## Settings file
+
+So you don't have to retype the same flags every time, `--fit`,
+`--cut-lines`/`--no-cut-lines`, `--brighten`, `--header-align` and
+`--body-align` can also be set in a TOML settings file:
+
+- `~/.gm_cards.toml` - global defaults, used for every `cards` folder.
+- `<cards_dir>/.gm_cards.toml` - per-folder overrides, for a deck that
+  needs different settings (e.g. a printer-specific `brighten` value).
+
+A CLI flag, when given explicitly, always wins over both files. Example:
+
+```toml
+# ~/.gm_cards.toml
+brighten = 1.3
+fit = "contain"
+```
+
+Requires Python 3.11+ (for the standard library's `tomllib`); on older
+Python, settings files are ignored with a warning.
+
 Run `python make_cards.py -h` for the full list.
 
 All the geometry constants (page size, card size, margins, gutter between
