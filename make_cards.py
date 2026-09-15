@@ -533,11 +533,26 @@ def draw_back_card(c, entry, x, y, cut_lines, header_align, body_align, debug):
 # Main
 # ---------------------------------------------------------------------------
 
+def format_run_metadata(**settings):
+    """Format the settings used for a run as 'key=value' pairs, for writing
+    into the output PDF's Subject/Keywords metadata - so a PDF found later
+    (e.g. via a PDF viewer's document properties, or `exiftool`/`pdfinfo`)
+    documents how it was generated, even if .gm_cards.toml has since
+    changed."""
+    parts = []
+    for key, value in settings.items():
+        if key == 'filters':
+            value = ','.join(value) if value else 'none'
+        parts.append(f"{key}={value}")
+    return ' '.join(parts)
+
+
 def build_pdf(entries, output_path, fit='cover', cut_lines=True,
               header_align_name='center', body_align_name='center', debug=False,
               brighten=1.0, contrast=1.0, saturation=1.0, sharpness=1.0,
               red=1.0, green=1.0, blue=1.0,
-              gamma=1.0, grayscale=False, sepia=False):
+              gamma=1.0, grayscale=False, sepia=False,
+              recursive=False, filters=None):
     align_map = {'center': TA_CENTER, 'left': TA_LEFT}
     header_align = align_map[header_align_name]
     body_align = align_map[body_align_name]
@@ -549,6 +564,15 @@ def build_pdf(entries, output_path, fit='cover', cut_lines=True,
     back_per_page = back_cols * back_rows
 
     c = canvas.Canvas(str(output_path), pagesize=(PAGE_W * mm, PAGE_H * mm))
+    c.setCreator('make_cards.py')
+    metadata = format_run_metadata(
+        fit=fit, cut_lines=cut_lines, header_align=header_align_name,
+        body_align=body_align_name, brighten=brighten, contrast=contrast,
+        saturation=saturation, sharpness=sharpness, red=red, green=green, blue=blue,
+        gamma=gamma, grayscale=grayscale, sepia=sepia,
+        recursive=recursive, filters=filters)
+    c.setSubject(metadata)
+    c.setKeywords(metadata)
 
     # --- front (art) pages ---
     for page_start in range(0, len(entries), front_per_page):
@@ -657,7 +681,8 @@ def main():
         debug=args.debug, brighten=settings['brighten'], contrast=settings['contrast'],
         saturation=settings['saturation'], sharpness=settings['sharpness'],
         red=settings['red'], green=settings['green'], blue=settings['blue'],
-        gamma=settings['gamma'], grayscale=settings['grayscale'], sepia=settings['sepia'])
+        gamma=settings['gamma'], grayscale=settings['grayscale'], sepia=settings['sepia'],
+        recursive=settings['recursive'], filters=settings['filter'])
 
     f_pages = -(-len(entries) // fpp)  # ceil
     b_pages = -(-len(entries) // bpp)

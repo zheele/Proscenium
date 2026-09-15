@@ -170,6 +170,16 @@ fit = "contain"
 Requires Python 3.11+ (for the standard library's `tomllib`); on older
 Python, settings files are ignored with a warning.
 
+## Recipe stored in the PDF
+
+Every generated PDF records the settings it was made with (fit,
+cut-lines, all the image adjustments, alignment, recursive/filter) in
+its **Subject** and **Keywords** metadata fields - visible in a PDF
+viewer's document properties, or via `exiftool`/`pdfinfo`. So if you
+come back to an old `cards.pdf` and wonder how it was generated, or
+whether it matches your current `.gm_cards.toml`, the answer travels
+with the file instead of needing to be remembered separately.
+
 Run `python make_cards.py -h` for the full list.
 
 All the geometry constants (page size, card size, margins, gutter between
