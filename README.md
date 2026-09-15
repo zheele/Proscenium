@@ -106,6 +106,14 @@ Each is `1.0` = unchanged, and can be pushed up or down as needed:
 There's no single right value for any of these, since it depends on
 your printer, so print a test page and adjust from there.
 
+`--red`, `--green` and `--blue` boost or cut an individual color
+channel - useful if your printer skews a particular color (e.g. prints
+everything a bit too red). Same `1.0` = unchanged convention:
+
+```
+python make_cards.py cards -o cards.pdf --red 0.85   # tone down a red-heavy printer
+```
+
 `--gamma` is another way to fix a dark printer, using `output = input ** (1/gamma)`
 instead of a flat multiplier - `>1.0` lifts shadows/midtones while leaving
 highlights alone, `<1.0` darkens them. It's often a better fix than
@@ -143,9 +151,9 @@ matches *any* of them. With no `--filter`, everything found is included.
 
 So you don't have to retype the same flags every time, `--fit`,
 `--cut-lines`/`--no-cut-lines`, `--brighten`, `--contrast`,
-`--saturation`, `--sharpness`, `--gamma`, `--grayscale`, `--sepia`,
-`--header-align`, `--body-align`, `--recursive` and `--filter` can also
-be set in a TOML settings file:
+`--saturation`, `--sharpness`, `--red`, `--green`, `--blue`, `--gamma`,
+`--grayscale`, `--sepia`, `--header-align`, `--body-align`,
+`--recursive` and `--filter` can also be set in a TOML settings file:
 
 - `~/.gm_cards.toml` - global defaults, used for every `cards` folder.
 - `<cards_dir>/.gm_cards.toml` - per-folder overrides, for a deck that

@@ -106,8 +106,9 @@ SEPIA_MATRIX = (
 # Settings file
 #
 # Lets you set defaults for --fit/--brighten/--contrast/--saturation/
-# --sharpness/--gamma/--grayscale/--sepia/--header-align/--body-align/
-# --cut-lines once instead of retyping them every run:
+# --sharpness/--red/--green/--blue/--gamma/--grayscale/--sepia/
+# --header-align/--body-align/--cut-lines once instead of retyping them
+# every run:
 #   ~/.gm_cards.toml           - global defaults
 #   <cards_dir>/.gm_cards.toml - per-folder overrides (take precedence)
 # A CLI flag, when given explicitly, always wins over both.
@@ -120,6 +121,9 @@ CONFIG_DEFAULTS = {
     'contrast': 1.0,
     'saturation': 1.0,
     'sharpness': 1.0,
+    'red': 1.0,
+    'green': 1.0,
+    'blue': 1.0,
     'gamma': 1.0,
     'grayscale': False,
     'sepia': False,
@@ -136,6 +140,8 @@ CONFIG_CHOICES = {
 }
 
 CONFIG_BOOL_KEYS = {'cut_lines', 'recursive', 'grayscale', 'sepia'}
+CONFIG_FLOAT_KEYS = {'brighten', 'contrast', 'saturation', 'sharpness',
+                      'red', 'green', 'blue', 'gamma'}
 
 GLOBAL_CONFIG_PATH = Path.home() / '.gm_cards.toml'
 
@@ -172,6 +178,15 @@ def _read_config_file(path):
             print(f"Warning: ignoring invalid '{key}' = {data[key]!r} in {path} "
                   f"(must be true or false)", file=sys.stderr)
             del data[key]
+    for key in CONFIG_FLOAT_KEYS:
+        if key not in data:
+            continue
+        if isinstance(data[key], bool) or not isinstance(data[key], (int, float)):
+            print(f"Warning: ignoring invalid '{key}' = {data[key]!r} in {path} "
+                  f"(must be a number)", file=sys.stderr)
+            del data[key]
+        else:
+            data[key] = float(data[key])
     return data
 
 
@@ -316,6 +331,7 @@ def fit_two_paragraphs(header_xml, body_xml, avail_w_pt, avail_h_pt,
 
 def load_image_reader(path, target_w_mm, target_h_mm, fit='cover',
                        brighten=1.0, contrast=1.0, saturation=1.0, sharpness=1.0,
+                       red=1.0, green=1.0, blue=1.0,
                        gamma=1.0, grayscale=False, sepia=False):
     img = Image.open(path)
     img = ImageOps.exif_transpose(img)
@@ -330,6 +346,17 @@ def load_image_reader(path, target_w_mm, target_h_mm, fit='cover',
     ):
         if factor != 1.0:
             img = enhancer_cls(img).enhance(factor)
+
+    if (red, green, blue) != (1.0, 1.0, 1.0):
+        if img.mode != 'RGB':
+            img = img.convert('RGB')
+        boosted_bands = []
+        for band, factor in zip(img.split(), (red, green, blue)):
+            if factor != 1.0:
+                lut = [min(255, max(0, round(i * factor))) for i in range(256)]
+                band = band.point(lut)
+            boosted_bands.append(band)
+        img = Image.merge('RGB', boosted_bands)
 
     if gamma != 1.0:
         lut = [min(255, max(0, round(255 * (i / 255) ** (1.0 / gamma)))) for i in range(256)]
@@ -426,6 +453,7 @@ def draw_debug_label(c, x, y, card_w, stem):
 
 def draw_front_card(c, entry, x, y, fit, cut_lines, debug,
                      brighten=1.0, contrast=1.0, saturation=1.0, sharpness=1.0,
+                     red=1.0, green=1.0, blue=1.0,
                      gamma=1.0, grayscale=False, sepia=False):
     if cut_lines:
         draw_cut_lines(c, x, y, FRONT_CARD_W, FRONT_CARD_H)
@@ -436,6 +464,7 @@ def draw_front_card(c, entry, x, y, fit, cut_lines, debug,
             img_reader = load_image_reader(entry.image_path, FRONT_WIN_W, FRONT_WIN_H, fit=fit,
                                             brighten=brighten, contrast=contrast,
                                             saturation=saturation, sharpness=sharpness,
+                                            red=red, green=green, blue=blue,
                                             gamma=gamma, grayscale=grayscale, sepia=sepia)
             if fit == 'cover':
                 c.drawImage(img_reader, win_x * mm, win_y * mm,
@@ -507,6 +536,7 @@ def draw_back_card(c, entry, x, y, cut_lines, header_align, body_align, debug):
 def build_pdf(entries, output_path, fit='cover', cut_lines=True,
               header_align_name='center', body_align_name='center', debug=False,
               brighten=1.0, contrast=1.0, saturation=1.0, sharpness=1.0,
+              red=1.0, green=1.0, blue=1.0,
               gamma=1.0, grayscale=False, sepia=False):
     align_map = {'center': TA_CENTER, 'left': TA_LEFT}
     header_align = align_map[header_align_name]
@@ -527,6 +557,7 @@ def build_pdf(entries, output_path, fit='cover', cut_lines=True,
             x, y = card_origin(i, front_cols, front_ox, front_oy, FRONT_CARD_W, FRONT_CARD_H)
             draw_front_card(c, entry, x, y, fit, cut_lines, debug, brighten=brighten,
                              contrast=contrast, saturation=saturation, sharpness=sharpness,
+                             red=red, green=green, blue=blue,
                              gamma=gamma, grayscale=grayscale, sepia=sepia)
         c.showPage()
 
@@ -565,6 +596,15 @@ def main():
     ap.add_argument('--sharpness', type=float, default=None,
                      help='Adjust sharpness of front-card images. '
                           '1.0 = unchanged, <1.0 softer/blurred, >1.0 sharper. (default: 1.0)')
+    ap.add_argument('--red', type=float, default=None,
+                     help='Boost/cut the red channel of front-card images. '
+                          '1.0 = unchanged, <1.0 less red, >1.0 more red. (default: 1.0)')
+    ap.add_argument('--green', type=float, default=None,
+                     help='Boost/cut the green channel of front-card images. '
+                          '1.0 = unchanged, <1.0 less green, >1.0 more green. (default: 1.0)')
+    ap.add_argument('--blue', type=float, default=None,
+                     help='Boost/cut the blue channel of front-card images. '
+                          '1.0 = unchanged, <1.0 less blue, >1.0 more blue. (default: 1.0)')
     ap.add_argument('--gamma', type=float, default=None,
                      help='Gamma-correct front-card images: output = input ** (1/gamma). '
                           '1.0 = unchanged, >1.0 lifts shadows/midtones, <1.0 darkens them. '
@@ -616,6 +656,7 @@ def main():
         header_align_name=settings['header_align'], body_align_name=settings['body_align'],
         debug=args.debug, brighten=settings['brighten'], contrast=settings['contrast'],
         saturation=settings['saturation'], sharpness=settings['sharpness'],
+        red=settings['red'], green=settings['green'], blue=settings['blue'],
         gamma=settings['gamma'], grayscale=settings['grayscale'], sepia=settings['sepia'])
 
     f_pages = -(-len(entries) // fpp)  # ceil
