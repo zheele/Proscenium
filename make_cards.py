@@ -95,12 +95,19 @@ PAGE_MARGIN = 8.0    # minimum margin used only to decide how many cards
 
 IMAGE_EXTS = {'.png', '.jpg', '.jpeg', '.webp', '.bmp', '.tif', '.tiff'}
 
+# Classic sepia tone, as a PIL convert() matrix (3 rows of R,G,B,const).
+SEPIA_MATRIX = (
+    0.393, 0.769, 0.189, 0,
+    0.349, 0.686, 0.168, 0,
+    0.272, 0.534, 0.131, 0,
+)
+
 # ---------------------------------------------------------------------------
 # Settings file
 #
 # Lets you set defaults for --fit/--brighten/--contrast/--saturation/
-# --sharpness/--header-align/--body-align/--cut-lines once instead of
-# retyping them every run:
+# --sharpness/--gamma/--grayscale/--sepia/--header-align/--body-align/
+# --cut-lines once instead of retyping them every run:
 #   ~/.gm_cards.toml           - global defaults
 #   <cards_dir>/.gm_cards.toml - per-folder overrides (take precedence)
 # A CLI flag, when given explicitly, always wins over both.
@@ -113,6 +120,9 @@ CONFIG_DEFAULTS = {
     'contrast': 1.0,
     'saturation': 1.0,
     'sharpness': 1.0,
+    'gamma': 1.0,
+    'grayscale': False,
+    'sepia': False,
     'header_align': 'center',
     'body_align': 'center',
     'recursive': False,
@@ -124,6 +134,8 @@ CONFIG_CHOICES = {
     'header_align': {'center', 'left'},
     'body_align': {'center', 'left'},
 }
+
+CONFIG_BOOL_KEYS = {'cut_lines', 'recursive', 'grayscale', 'sepia'}
 
 GLOBAL_CONFIG_PATH = Path.home() / '.gm_cards.toml'
 
@@ -155,10 +167,11 @@ def _read_config_file(path):
             print(f"Warning: ignoring invalid 'filter' in {path} "
                   f"(must be a string or list of strings)", file=sys.stderr)
             del data['filter']
-    if 'recursive' in data and not isinstance(data['recursive'], bool):
-        print(f"Warning: ignoring invalid 'recursive' = {data['recursive']!r} in {path} "
-              f"(must be true or false)", file=sys.stderr)
-        del data['recursive']
+    for key in CONFIG_BOOL_KEYS:
+        if key in data and not isinstance(data[key], bool):
+            print(f"Warning: ignoring invalid '{key}' = {data[key]!r} in {path} "
+                  f"(must be true or false)", file=sys.stderr)
+            del data[key]
     return data
 
 
@@ -302,7 +315,8 @@ def fit_two_paragraphs(header_xml, body_xml, avail_w_pt, avail_h_pt,
 # ---------------------------------------------------------------------------
 
 def load_image_reader(path, target_w_mm, target_h_mm, fit='cover',
-                       brighten=1.0, contrast=1.0, saturation=1.0, sharpness=1.0):
+                       brighten=1.0, contrast=1.0, saturation=1.0, sharpness=1.0,
+                       gamma=1.0, grayscale=False, sepia=False):
     img = Image.open(path)
     img = ImageOps.exif_transpose(img)
     if img.mode not in ('RGB', 'L'):
@@ -316,6 +330,15 @@ def load_image_reader(path, target_w_mm, target_h_mm, fit='cover',
     ):
         if factor != 1.0:
             img = enhancer_cls(img).enhance(factor)
+
+    if gamma != 1.0:
+        lut = [min(255, max(0, round(255 * (i / 255) ** (1.0 / gamma)))) for i in range(256)]
+        img = img.point(lut * len(img.getbands()))
+
+    if sepia:
+        img = ImageOps.grayscale(img).convert('RGB').convert('RGB', SEPIA_MATRIX)
+    elif grayscale:
+        img = ImageOps.grayscale(img)
 
     if fit == 'cover':
         target_ratio = target_w_mm / target_h_mm
@@ -402,7 +425,8 @@ def draw_debug_label(c, x, y, card_w, stem):
 
 
 def draw_front_card(c, entry, x, y, fit, cut_lines, debug,
-                     brighten=1.0, contrast=1.0, saturation=1.0, sharpness=1.0):
+                     brighten=1.0, contrast=1.0, saturation=1.0, sharpness=1.0,
+                     gamma=1.0, grayscale=False, sepia=False):
     if cut_lines:
         draw_cut_lines(c, x, y, FRONT_CARD_W, FRONT_CARD_H)
     win_x = x + MARGIN_L
@@ -411,7 +435,8 @@ def draw_front_card(c, entry, x, y, fit, cut_lines, debug,
         try:
             img_reader = load_image_reader(entry.image_path, FRONT_WIN_W, FRONT_WIN_H, fit=fit,
                                             brighten=brighten, contrast=contrast,
-                                            saturation=saturation, sharpness=sharpness)
+                                            saturation=saturation, sharpness=sharpness,
+                                            gamma=gamma, grayscale=grayscale, sepia=sepia)
             if fit == 'cover':
                 c.drawImage(img_reader, win_x * mm, win_y * mm,
                             width=FRONT_WIN_W * mm, height=FRONT_WIN_H * mm,
@@ -481,7 +506,8 @@ def draw_back_card(c, entry, x, y, cut_lines, header_align, body_align, debug):
 
 def build_pdf(entries, output_path, fit='cover', cut_lines=True,
               header_align_name='center', body_align_name='center', debug=False,
-              brighten=1.0, contrast=1.0, saturation=1.0, sharpness=1.0):
+              brighten=1.0, contrast=1.0, saturation=1.0, sharpness=1.0,
+              gamma=1.0, grayscale=False, sepia=False):
     align_map = {'center': TA_CENTER, 'left': TA_LEFT}
     header_align = align_map[header_align_name]
     body_align = align_map[body_align_name]
@@ -500,7 +526,8 @@ def build_pdf(entries, output_path, fit='cover', cut_lines=True,
         for i, entry in enumerate(page_entries):
             x, y = card_origin(i, front_cols, front_ox, front_oy, FRONT_CARD_W, FRONT_CARD_H)
             draw_front_card(c, entry, x, y, fit, cut_lines, debug, brighten=brighten,
-                             contrast=contrast, saturation=saturation, sharpness=sharpness)
+                             contrast=contrast, saturation=saturation, sharpness=sharpness,
+                             gamma=gamma, grayscale=grayscale, sepia=sepia)
         c.showPage()
 
     # --- back (name/stats) pages - packed independently, smaller cards ---
@@ -538,6 +565,16 @@ def main():
     ap.add_argument('--sharpness', type=float, default=None,
                      help='Adjust sharpness of front-card images. '
                           '1.0 = unchanged, <1.0 softer/blurred, >1.0 sharper. (default: 1.0)')
+    ap.add_argument('--gamma', type=float, default=None,
+                     help='Gamma-correct front-card images: output = input ** (1/gamma). '
+                          '1.0 = unchanged, >1.0 lifts shadows/midtones, <1.0 darkens them. '
+                          'Often a better fix for a dark printer than --brighten, since it '
+                          'leaves highlights alone. (default: 1.0)')
+    ap.add_argument('--grayscale', action=argparse.BooleanOptionalAction, default=None,
+                     help='Convert front-card images to grayscale (default: off)')
+    ap.add_argument('--sepia', action=argparse.BooleanOptionalAction, default=None,
+                     help='Apply a sepia tone to front-card images; implies --grayscale '
+                          '(default: off)')
     ap.add_argument('--header-align', choices=['center', 'left'], default=None)
     ap.add_argument('--body-align', choices=['center', 'left'], default=None)
     ap.add_argument('-r', '--recursive', action=argparse.BooleanOptionalAction, default=None,
@@ -578,7 +615,8 @@ def main():
         entries, args.output, fit=settings['fit'], cut_lines=settings['cut_lines'],
         header_align_name=settings['header_align'], body_align_name=settings['body_align'],
         debug=args.debug, brighten=settings['brighten'], contrast=settings['contrast'],
-        saturation=settings['saturation'], sharpness=settings['sharpness'])
+        saturation=settings['saturation'], sharpness=settings['sharpness'],
+        gamma=settings['gamma'], grayscale=settings['grayscale'], sepia=settings['sepia'])
 
     f_pages = -(-len(entries) // fpp)  # ceil
     b_pages = -(-len(entries) // bpp)

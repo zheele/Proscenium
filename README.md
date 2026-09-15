@@ -106,6 +106,20 @@ Each is `1.0` = unchanged, and can be pushed up or down as needed:
 There's no single right value for any of these, since it depends on
 your printer, so print a test page and adjust from there.
 
+`--gamma` is another way to fix a dark printer, using `output = input ** (1/gamma)`
+instead of a flat multiplier - `>1.0` lifts shadows/midtones while leaving
+highlights alone, `<1.0` darkens them. It's often a better fix than
+`--brighten` for that reason, but the two aren't mutually exclusive.
+
+`--grayscale` converts front-card art to grayscale; `--sepia` gives it
+an old-photo sepia tone (and implies grayscale, so there's no need to
+pass both):
+
+```
+python make_cards.py cards -o cards.pdf --gamma 1.4
+python make_cards.py cards -o cards.pdf --sepia
+```
+
 ## Subfolders and filtering
 
 By default only the top level of `cards_dir` is scanned. Pass
@@ -129,8 +143,9 @@ matches *any* of them. With no `--filter`, everything found is included.
 
 So you don't have to retype the same flags every time, `--fit`,
 `--cut-lines`/`--no-cut-lines`, `--brighten`, `--contrast`,
-`--saturation`, `--sharpness`, `--header-align`, `--body-align`,
-`--recursive` and `--filter` can also be set in a TOML settings file:
+`--saturation`, `--sharpness`, `--gamma`, `--grayscale`, `--sepia`,
+`--header-align`, `--body-align`, `--recursive` and `--filter` can also
+be set in a TOML settings file:
 
 - `~/.gm_cards.toml` - global defaults, used for every `cards` folder.
 - `<cards_dir>/.gm_cards.toml` - per-folder overrides, for a deck that
