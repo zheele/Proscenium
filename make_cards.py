@@ -32,6 +32,12 @@ Folder layout expected in CARDS_DIR - pairs of files sharing a name:
     skeleton.jpg
     skeleton.md
 
+Pass --recursive to also collect pairs from subfolders (pairing is by
+path relative to CARDS_DIR, so same-named files in different subfolders
+don't collide), and --filter GLOB to only include cards whose relative
+path matches - e.g. --filter 'bosses/*' for a whole subfolder, or
+--filter '*dragon*' for filenames anywhere.
+
 Each .md file's first heading (# Name) becomes the centered, bold name;
 everything else becomes the stat block below it. Basic **bold**, *italic*
 and "- bullet" markdown is supported. A file with an image but no .md
@@ -44,6 +50,7 @@ Run with -h for all options.
 """
 
 import argparse
+import fnmatch
 import io
 import re
 import sys
@@ -104,6 +111,8 @@ CONFIG_DEFAULTS = {
     'brighten': 1.0,
     'header_align': 'center',
     'body_align': 'center',
+    'recursive': False,
+    'filter': None,
 }
 
 CONFIG_CHOICES = {
@@ -134,6 +143,18 @@ def _read_config_file(path):
             print(f"Warning: ignoring invalid '{key}' = {data[key]!r} in {path} "
                   f"(must be one of {sorted(choices)})", file=sys.stderr)
             del data[key]
+    if 'filter' in data:
+        f = data['filter']
+        if isinstance(f, str):
+            data['filter'] = [f]
+        elif not (isinstance(f, list) and all(isinstance(x, str) for x in f)):
+            print(f"Warning: ignoring invalid 'filter' in {path} "
+                  f"(must be a string or list of strings)", file=sys.stderr)
+            del data['filter']
+    if 'recursive' in data and not isinstance(data['recursive'], bool):
+        print(f"Warning: ignoring invalid 'recursive' = {data['recursive']!r} in {path} "
+              f"(must be true or false)", file=sys.stderr)
+        del data['recursive']
     return data
 
 
@@ -315,16 +336,29 @@ class CardEntry:
         self.md_path = md_path
 
 
-def collect_entries(cards_dir):
+def collect_entries(cards_dir, recursive=False, filters=None):
+    """Find image + .md pairs under cards_dir.
+
+    recursive: also descend into subfolders.
+    filters: optional list of glob patterns, matched with fnmatch against
+        each card's path relative to cards_dir (POSIX separators, no
+        extension - e.g. 'bosses/dragon'). A card is included if it matches
+        ANY pattern; patterns can target a whole subfolder ('bosses/*') or
+        a filename anywhere ('*dragon*'). No filters means include everything.
+    """
     cards_dir = Path(cards_dir)
+    paths = cards_dir.rglob('*') if recursive else cards_dir.iterdir()
     stems = {}
-    for p in sorted(cards_dir.iterdir()):
+    for p in sorted(paths):
         if p.is_dir():
             continue
         ext = p.suffix.lower()
         if ext not in IMAGE_EXTS and ext != '.md':
             continue
-        entry = stems.setdefault(p.stem, {'image': None, 'md': None})
+        key = p.relative_to(cards_dir).with_suffix('').as_posix()
+        if filters and not any(fnmatch.fnmatch(key, pat) for pat in filters):
+            continue
+        entry = stems.setdefault(key, {'image': None, 'md': None})
         if ext in IMAGE_EXTS:
             entry['image'] = p
         elif ext == '.md':
@@ -483,6 +517,15 @@ def main():
                           '1.0 = unchanged, 1.2 = 20%% brighter, etc. (default: 1.0)')
     ap.add_argument('--header-align', choices=['center', 'left'], default=None)
     ap.add_argument('--body-align', choices=['center', 'left'], default=None)
+    ap.add_argument('-r', '--recursive', action=argparse.BooleanOptionalAction, default=None,
+                     help='Also search subfolders of cards_dir for image + .md pairs '
+                          '(default: off)')
+    ap.add_argument('--filter', action='append', default=None, metavar='GLOB',
+                     help="Only include cards whose path relative to cards_dir, without "
+                          "extension (e.g. 'bosses/dragon'), matches this glob pattern. "
+                          "Can be given multiple times - a card matching ANY pattern is "
+                          "included. Matches a whole subfolder ('bosses/*') or a filename "
+                          "anywhere ('*dragon*'). Default: include everything.")
     ap.add_argument('--debug', action='store_true',
                      help='Draw window outlines and filenames for alignment checking')
     args = ap.parse_args()
@@ -492,8 +535,11 @@ def main():
         cli_value = getattr(args, key)
         if cli_value is not None:
             settings[key] = cli_value
+    if isinstance(settings['filter'], str):
+        settings['filter'] = [settings['filter']]
 
-    entries = collect_entries(args.cards_dir)
+    entries = collect_entries(args.cards_dir, recursive=settings['recursive'],
+                               filters=settings['filter'])
     if not entries:
         print(f"No images or .md files found in {args.cards_dir}", file=sys.stderr)
         sys.exit(1)

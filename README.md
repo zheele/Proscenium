@@ -96,11 +96,31 @@ back stat-block pages. `1.0` is unchanged, `1.2` is 20% brighter, and so
 on; there's no single right value, since it depends on your printer, so
 print a test page and adjust from there.
 
+## Subfolders and filtering
+
+By default only the top level of `cards_dir` is scanned. Pass
+`--recursive` (`-r`) to also collect image + `.md` pairs from
+subfolders - pairing is based on the path relative to `cards_dir`, so
+same-named files in different subfolders (e.g. `bosses/dragon.png` and
+`npcs/dragon.png`) don't collide.
+
+Use `--filter GLOB` to only include a subset, matched against each
+card's path relative to `cards_dir` (no extension, forward slashes):
+
+```
+python make_cards.py cards -o cards.pdf -r --filter 'bosses/*'    # a whole subfolder
+python make_cards.py cards -o cards.pdf -r --filter '*dragon*'    # a filename anywhere
+```
+
+`--filter` can be given multiple times; a card is included if it
+matches *any* of them. With no `--filter`, everything found is included.
+
 ## Settings file
 
 So you don't have to retype the same flags every time, `--fit`,
-`--cut-lines`/`--no-cut-lines`, `--brighten`, `--header-align` and
-`--body-align` can also be set in a TOML settings file:
+`--cut-lines`/`--no-cut-lines`, `--brighten`, `--header-align`,
+`--body-align`, `--recursive` and `--filter` can also be set in a TOML
+settings file:
 
 - `~/.gm_cards.toml` - global defaults, used for every `cards` folder.
 - `<cards_dir>/.gm_cards.toml` - per-folder overrides, for a deck that
