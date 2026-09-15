@@ -88,7 +88,13 @@ them in one place.
 python make_cards.py cards -o cards.pdf --fit contain   # letterbox instead of crop-to-fill
 python make_cards.py cards -o cards.pdf --header-align left --body-align left
 python make_cards.py cards -o cards.pdf --debug          # show window outlines + filenames, for checking alignment before a real print
+python make_cards.py cards -o cards.pdf --brighten 1.3   # brighten front-card images, for a printer that prints dark
 ```
+
+`--brighten` only affects the front (art) images - it doesn't touch the
+back stat-block pages. `1.0` is unchanged, `1.2` is 20% brighter, and so
+on; there's no single right value, since it depends on your printer, so
+print a test page and adjust from there.
 
 Run `python make_cards.py -h` for the full list.
 
