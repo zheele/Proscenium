@@ -89,12 +89,22 @@ python make_cards.py cards -o cards.pdf --fit contain   # letterbox instead of c
 python make_cards.py cards -o cards.pdf --header-align left --body-align left
 python make_cards.py cards -o cards.pdf --debug          # show window outlines + filenames, for checking alignment before a real print
 python make_cards.py cards -o cards.pdf --brighten 1.3   # brighten front-card images, for a printer that prints dark
+python make_cards.py cards -o cards.pdf --contrast 1.2 --saturation 0.9 --sharpness 1.5
 ```
 
-`--brighten` only affects the front (art) images - it doesn't touch the
-back stat-block pages. `1.0` is unchanged, `1.2` is 20% brighter, and so
-on; there's no single right value, since it depends on your printer, so
-print a test page and adjust from there.
+`--brighten`, `--contrast`, `--saturation` and `--sharpness` only affect
+the front (art) images - they don't touch the back stat-block pages.
+Each is `1.0` = unchanged, and can be pushed up or down as needed:
+
+| Option | Below 1.0 | Above 1.0 |
+|---|---|---|
+| `--brighten` | darker | brighter |
+| `--contrast` | flatter | more contrast |
+| `--saturation` | toward grayscale (`0.0` = fully gray) | more vivid |
+| `--sharpness` | softer/blurred | sharper |
+
+There's no single right value for any of these, since it depends on
+your printer, so print a test page and adjust from there.
 
 ## Subfolders and filtering
 
@@ -118,9 +128,9 @@ matches *any* of them. With no `--filter`, everything found is included.
 ## Settings file
 
 So you don't have to retype the same flags every time, `--fit`,
-`--cut-lines`/`--no-cut-lines`, `--brighten`, `--header-align`,
-`--body-align`, `--recursive` and `--filter` can also be set in a TOML
-settings file:
+`--cut-lines`/`--no-cut-lines`, `--brighten`, `--contrast`,
+`--saturation`, `--sharpness`, `--header-align`, `--body-align`,
+`--recursive` and `--filter` can also be set in a TOML settings file:
 
 - `~/.gm_cards.toml` - global defaults, used for every `cards` folder.
 - `<cards_dir>/.gm_cards.toml` - per-folder overrides, for a deck that

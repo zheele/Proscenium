@@ -98,8 +98,9 @@ IMAGE_EXTS = {'.png', '.jpg', '.jpeg', '.webp', '.bmp', '.tif', '.tiff'}
 # ---------------------------------------------------------------------------
 # Settings file
 #
-# Lets you set defaults for --fit/--brighten/--header-align/--body-align/
-# --cut-lines once instead of retyping them every run:
+# Lets you set defaults for --fit/--brighten/--contrast/--saturation/
+# --sharpness/--header-align/--body-align/--cut-lines once instead of
+# retyping them every run:
 #   ~/.gm_cards.toml           - global defaults
 #   <cards_dir>/.gm_cards.toml - per-folder overrides (take precedence)
 # A CLI flag, when given explicitly, always wins over both.
@@ -109,6 +110,9 @@ CONFIG_DEFAULTS = {
     'fit': 'cover',
     'cut_lines': True,
     'brighten': 1.0,
+    'contrast': 1.0,
+    'saturation': 1.0,
+    'sharpness': 1.0,
     'header_align': 'center',
     'body_align': 'center',
     'recursive': False,
@@ -297,14 +301,21 @@ def fit_two_paragraphs(header_xml, body_xml, avail_w_pt, avail_h_pt,
 # Image helpers
 # ---------------------------------------------------------------------------
 
-def load_image_reader(path, target_w_mm, target_h_mm, fit='cover', brighten=1.0):
+def load_image_reader(path, target_w_mm, target_h_mm, fit='cover',
+                       brighten=1.0, contrast=1.0, saturation=1.0, sharpness=1.0):
     img = Image.open(path)
     img = ImageOps.exif_transpose(img)
     if img.mode not in ('RGB', 'L'):
         img = img.convert('RGB')
 
-    if brighten != 1.0:
-        img = ImageEnhance.Brightness(img).enhance(brighten)
+    for enhancer_cls, factor in (
+        (ImageEnhance.Brightness, brighten),
+        (ImageEnhance.Contrast, contrast),
+        (ImageEnhance.Color, saturation),
+        (ImageEnhance.Sharpness, sharpness),
+    ):
+        if factor != 1.0:
+            img = enhancer_cls(img).enhance(factor)
 
     if fit == 'cover':
         target_ratio = target_w_mm / target_h_mm
@@ -390,7 +401,8 @@ def draw_debug_label(c, x, y, card_w, stem):
     c.restoreState()
 
 
-def draw_front_card(c, entry, x, y, fit, cut_lines, debug, brighten=1.0):
+def draw_front_card(c, entry, x, y, fit, cut_lines, debug,
+                     brighten=1.0, contrast=1.0, saturation=1.0, sharpness=1.0):
     if cut_lines:
         draw_cut_lines(c, x, y, FRONT_CARD_W, FRONT_CARD_H)
     win_x = x + MARGIN_L
@@ -398,7 +410,8 @@ def draw_front_card(c, entry, x, y, fit, cut_lines, debug, brighten=1.0):
     if entry.image_path:
         try:
             img_reader = load_image_reader(entry.image_path, FRONT_WIN_W, FRONT_WIN_H, fit=fit,
-                                            brighten=brighten)
+                                            brighten=brighten, contrast=contrast,
+                                            saturation=saturation, sharpness=sharpness)
             if fit == 'cover':
                 c.drawImage(img_reader, win_x * mm, win_y * mm,
                             width=FRONT_WIN_W * mm, height=FRONT_WIN_H * mm,
@@ -468,7 +481,7 @@ def draw_back_card(c, entry, x, y, cut_lines, header_align, body_align, debug):
 
 def build_pdf(entries, output_path, fit='cover', cut_lines=True,
               header_align_name='center', body_align_name='center', debug=False,
-              brighten=1.0):
+              brighten=1.0, contrast=1.0, saturation=1.0, sharpness=1.0):
     align_map = {'center': TA_CENTER, 'left': TA_LEFT}
     header_align = align_map[header_align_name]
     body_align = align_map[body_align_name]
@@ -486,7 +499,8 @@ def build_pdf(entries, output_path, fit='cover', cut_lines=True,
         page_entries = entries[page_start:page_start + front_per_page]
         for i, entry in enumerate(page_entries):
             x, y = card_origin(i, front_cols, front_ox, front_oy, FRONT_CARD_W, FRONT_CARD_H)
-            draw_front_card(c, entry, x, y, fit, cut_lines, debug, brighten=brighten)
+            draw_front_card(c, entry, x, y, fit, cut_lines, debug, brighten=brighten,
+                             contrast=contrast, saturation=saturation, sharpness=sharpness)
         c.showPage()
 
     # --- back (name/stats) pages - packed independently, smaller cards ---
@@ -515,6 +529,15 @@ def main():
                      help='Brighten front-card images before placing them in the PDF, '
                           'to compensate for a printer that prints dark. '
                           '1.0 = unchanged, 1.2 = 20%% brighter, etc. (default: 1.0)')
+    ap.add_argument('--contrast', type=float, default=None,
+                     help='Adjust contrast of front-card images. '
+                          '1.0 = unchanged, <1.0 flatter, >1.0 more contrast. (default: 1.0)')
+    ap.add_argument('--saturation', type=float, default=None,
+                     help='Adjust color saturation of front-card images. '
+                          '1.0 = unchanged, 0.0 = grayscale, >1.0 more vivid. (default: 1.0)')
+    ap.add_argument('--sharpness', type=float, default=None,
+                     help='Adjust sharpness of front-card images. '
+                          '1.0 = unchanged, <1.0 softer/blurred, >1.0 sharper. (default: 1.0)')
     ap.add_argument('--header-align', choices=['center', 'left'], default=None)
     ap.add_argument('--body-align', choices=['center', 'left'], default=None)
     ap.add_argument('-r', '--recursive', action=argparse.BooleanOptionalAction, default=None,
@@ -554,7 +577,8 @@ def main():
     (fcols, frows, fpp), (bcols, brows, bpp) = build_pdf(
         entries, args.output, fit=settings['fit'], cut_lines=settings['cut_lines'],
         header_align_name=settings['header_align'], body_align_name=settings['body_align'],
-        debug=args.debug, brighten=settings['brighten'])
+        debug=args.debug, brighten=settings['brighten'], contrast=settings['contrast'],
+        saturation=settings['saturation'], sharpness=settings['sharpness'])
 
     f_pages = -(-len(entries) // fpp)  # ceil
     b_pages = -(-len(entries) // bpp)
